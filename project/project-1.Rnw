@@ -1,0 +1,1196 @@
+\documentclass[12pt, a4paper]{article}
+\usepackage{polski}
+\usepackage[utf8]{inputenc}
+\usepackage[top=2.5cm, bottom=2.5cm, left=0.5cm, right=0.5cm]{geometry}
+\usepackage{graphicx}
+\usepackage{float}
+\usepackage[colorlinks=true, linkcolor=blue]{hyperref}
+\usepackage{anyfontsize}
+\usepackage{bbm}
+\usepackage{amsmath}
+\usepackage{latexsym}
+\usepackage{amsfonts}
+\usepackage{longtable}
+\usepackage{array}
+\usepackage{Sweave}
+\usepackage{hyperref}
+\hypersetup{
+  colorlinks=true,
+  linkcolor=blue,
+  filecolor=magenta,      
+  urlcolor=cyan,
+}
+\urlstyle{same}
+<<ustawienia_globalne, echo=FALSE, warning=FALSE>>=
+library(knitr)
+library(xtable)
+opts_chunk$set(options(Encoding="UTF-8"),cache=FALSE,fig.path='figure/', fig.align='center', fig.pos='H',fig.width=7, fig.height=4)
+set.seed(41)
+@
+  \begin{document}
+
+\title{Pozyskiwanie Wiedzy\\
+  Projekt - Część I}
+\author{Justyna Domańska i Julia Lenczewska}
+\maketitle
+\tableofcontents
+\newpage
+\section{Cel raportu}
+Bank otrzymując wszelkie dokumenty dotyczące klientów chcących wziąć kredyt musi na podstawie przedstawionych informacji
+podjąć decyzję odnośnie tego czy powinien przyznać kredyt czy też nie. Wiąże się to z dwoma rodzajami ryzyka. Możliwe jest przyznanie "dobremu" klientowi statusu "złego" lub "złemu" "dobrego" (za dobrego klienta uważamy takiego, który będzie w stanie spłacić kredyt, za złego - który prawdopodobnie go nie spłaci).
+W pierwszej sytuacji bank straci możliwość uzyskania przychodzu związanego m.in. z odsetkami. W drugim natomiast naraża się na wysokie straty w związku z możliwością konieczności przeprowadzenia postępowania windykacyjnego.
+Oczywistym wydaje się, że dla banku lepiej jest stracić jednego dobrego klienta, niż popełnić błąd przyznając kredyt osobie, która nie będzie w stanie go spłacać.
+
+Celem raportu jest uzyskanie modelu, służącego do klasyfikacji klientów jako dobrych i złych.
+\section{Opis danych}
+Zbiór danych {\it German Credit} został zebrany i udostępniony przez profesora dr Hansa Hofmanna w 1994 roku. Pochodzi ze strony \url{http://archive.ics.uci.edu/ml/datasets/Statlog+(German+Credit+Data)}. Są to dane finansowe zawierające informacje o klientach ubiegających się o kredyt. Dane składają się z 21 kolumn oraz 1000 obserwacji (21. kolumna mówi o tym czy klient otrzymał kredyt czy nie). W omawianym zbiorze nie występują wartości brakujące. Wśród zmiennych wpływających na ocenę zdolności kredytowej klienta mamy 13 zmiennych jakościowych i 7 ilościowych. Typ ostatniej zmiennej (creditability) jest domyślnie ustawiony jako {\it integer}, jednak my zmieniamy go na {\it factor}. Dodatkowo wartości, które przyjmuje ta zmienna, tj. 1 i 2, zmieniamy na odpowiednio 0 i 1. Wartość 0 oznacza, że klient jest "dobry", zaś 1 - "zły". 
+<<echo=FALSE,message=FALSE,warning=FALSE>>=
+library(stringr)
+library(ipred)
+@
+<<echo=FALSE>>=
+dane <- read.table("german.data")
+@
+  <<echo=FALSE,eval=FALSE>>=
+  (wymiary <- dim(dane))
+# nie ma brakujących : 
+sum(is.na(dane))
+@
+  <<echo=FALSE>>=
+colnames(dane) <- c("Status of existing checking account","Duration in month",
+                      "Credit history","Purpose","Credit amount","Savings account",
+                      "Present employment since","Installment rate in percentage of disposable income",
+                      "Personal status and sex","Other debtors","Present residence since",
+                      "Property","Age in years","Other installment plans","Housing",
+                      "Number of existing credits at this bank","Job","Number of people being liable to provide maintenance for",
+                      "Telephone","foreign worker","creditability")
+dane$creditability <- as.factor(ifelse(dane$creditability == 2, 1,0))
+attach(dane)
+@
+  <<echo=FALSE>>=
+  #Opis zmiennych 
+  ## Tworzymy tabelkę
+  col1 <- seq(1,21)
+col2 <- colnames(dane)
+col3 <- c("Stan konta bankowego","Czas trwania (w miesiącach)","Historia kredytowa","Cel","Kwota kredytu","Oszczędności","Obecne zatrudnienie od","Udział obecnych rat w zarobkach","Status i płeć","Inni dłużnicy/poręczyciele","Obecne miejsce zamieszkania od",
+          "Własność","Wiek (w latach)","Inne plany ratalne","Dom","Liczba kredytów w tym banku","Praca", "Liczba osób na utrzymaniu", "Telefon","Pracownik zagraniczny","Zdolność kredytowa")
+col4 <- c()
+for (i in 1:dim(dane)[2]){
+  col4[i] <- class(dane[,i])
+}
+@
+  <<echo=FALSE,results='asis'>>=
+  opis <- cbind(col1,col2,col3,col4)
+colnames(opis) = c("L.p.","Nazwa zmiennej","Opis zmiennej","Typ")
+print(xtable(opis,caption="Lista zmiennych (kolumn) dla danych German Credit", label="tab:opis"), type="latex",table.placement = "H", include.rownames = FALSE)
+@
+  Tabela \ref{tab:opis} przedstawia informacje dotyczące zmiennych w zbiorze German Credit takie jak nazwa zmiennej, jej opis - a dokładniej tłumaczenie na język polski oraz typ zmiennej.
+
+<<echo=FALSE,results='asis',warning=FALSE>>=
+  kol1 <- c("Status of existing checking account"," "," "," ","Credit history"," "," "," "," ",
+            "Purpose"," "," "," "," "," "," "," "," "," "," ","Savings account"," "," "," "," ",
+            "Present employment since"," "," "," "," ","Personal status and sex"," "," "," "," ","Other debtors"," "," ","Property"," "," "," ","Other installment plans"," "," ",
+            "Housing"," "," ","Job"," "," "," ","Telephone"," ","foreign worker"," ")
+kol2 <- c(levels(dane$`Status of existing checking account`),levels(dane$`Credit history`),
+          "A40","A41","A42","A43","A44","A45","A46","A47","A48","A49","A410",levels(dane$`Savings account`),levels(dane$`Present employment since`),
+          levels(dane$`Personal status and sex`),"A95",levels(dane$`Other debtors`),
+          levels(dane$Property),levels(dane$`Other installment plans`),levels(dane$Housing),
+          levels(dane$Job),levels(dane$Telephone),levels(dane$`foreign worker`))
+
+kol3 <- c(" ... <    0 DM","0 <= ... <  200 DM", "... >= 200 DM /zapewniona pensja przez co najmniej rok","brak rachunku bankowego"," brak kredytów/wszystkie kredyty spłacone prawidłowo","wszystkie kredyty w tym banku spłacone prawidłowo"," istniejące kredyty spłacane do tej pory prawidłowo","opóźnienie w spłatach w przeszłości","kredyt zagrożony/istnieją inne kredyty (nie w tym banku)","nowy samochód","używany samochód", "meble, wyposażenie","radio/telewizja","sprzęt gospodarstwa domowego","remonty","edukacja","wakacje","przekwalifikowanie", "biznes", "inne"," ... <  100 DM","100 <= ... <  500 DM","500 <= ... < 1000 DM",".. >= 1000 DM","nieznane/ brak konta oszczędnościowego","bezrobotny"," ... < 1 rok","1  <= ... < 4 lat ", "4  <= ... < 7 lat",".. >= 7 lat","mężczyzna: rozwiedziony/w separacji","kobieta: rozwiedziona/w separacji/zamężna","mężczyzna: singiel","mężczyzna: żonaty/wdowiec","kobieta: singielka","brak","współkredytobiorca","poręczyciel","nieruchomość","jeśli nie A121: kasa mieszkaniowa/ubezpieczenie na życie","jeśli nie A121/A122: samochód lub inne, poza kontem oszcz.","nieznane/ brak własności","bank","sklepy","brak","wynajmowane","własne","za darmo"," bezrobotny/ niewykwalifikowany - zamiejscowy","niewykwalifikowany - rezydent","pracownik wykwalifikowany / urzędnik"," kierownictwo/ samozatrudniony/pracownik wysoko wykwal. / funkcjonariusz","brak","tak, zarejestrowany pod nazwiskiem klienta","tak","nie")
+
+opis_kategorycznych <- cbind(kol1,kol2,kol3)
+colnames(opis_kategorycznych) <- c("Nazwa zmiennej","Kategorie","Opis")
+tab_kat <- xtable(opis_kategorycznych,caption="Opis kategorii zmiennych typu factor",label="tab:opis_kat")
+align(tab_kat) <- "|ll|cl|"
+hlines <- c(-1,0,4,9,20,25,30,35,38,42,45,48,52,54,nrow(tab_kat))
+print(tab_kat,type="latex", hline.after = hlines,tabular.environment = "longtable",include.rownames=FALSE)
+@
+  Tabela \ref{tab:opis_kat} informuje nas o tym, jakie poziomy przyjmują zmienne kategoryczne, a także co dane poziomy oznaczają. 
+\section{Statystyki opisowe}
+% ilościowe : duration in month, credit amount, installement, present residence, age, number of existing, number of people
+<<echo=FALSE,results='asis'>>=
+  tabela <- matrix(0,nrow=7,ncol=7)
+j <- 1
+for (i in which(col4=="integer")){
+  
+  tabela[j,] <- c(summary(dane[,i]),sd(dane[,i]))
+  j <- j + 1
+}
+
+colnames(tabela) <- c("Min.","1st Qu.","Median","Mean","3rd Qu.","Max.","Sd")
+rownames(tabela) <- colnames(dane[which(col4=="integer")])
+print(xtable(tabela,caption="Statystyki opisowe dla zmiennych ilościowych",label="tab:statystyki",align = c("p{6cm}", "r", "r", "r","r","r","r","r")),type="latex",table.placement="H")
+@
+  Tabela \ref{tab:statystyki} przedstawia statystyki opisowe dla zmiennych, których typ ustawiony jest jako "integer". Obliczone statystyki to minimum, pierwszy kwartyl, mediana, średnia, trzeci kwartyl, maksimum oraz odchylenie standardowe. Widzimy, że najkrótszy czas trwania kredytu wynosi 4 miesiące, a najdłuższy 6 lat. Kwoty kredytu są bardzo zróżnicowane. Średnia to ok. 3271 marek niemieckich. Wysokość najwyższego kredytu, dużo większa niż średnia, może świadczyć o tym, że mamy do czynienia z obserwacjami odstającymi. Wiek ubiegających się o kredyt waha się od 19 do 75 roku życia.
+%Dla jakościowych
+<<echo=FALSE,results='asis'>>=
+  tabela2 <- summary(dane[,c(1,3,4,6,7,9,10)])
+print(xtable(tabela2,caption="Statystyki opisowe dla zmiennych jakościowych",label="tab:statystykijakosciowe",align=c("p{2cm}","p{2cm}","p{2cm}","p{2cm}","p{2cm}","p{2cm}","p{2cm}","p{2cm}")),type="latex",table.placement = "H",include.rownames = F)
+@
+  <<echo=FALSE,results='asis'>>=
+  tabela3 <- summary(dane[,c(12,14,15,17,19,20,21)])
+print(xtable(tabela3,caption="Statystyki opisowe dla zmiennych jakościowych",label="tab:statystykijakosciowe2",align=c("p{2cm}","p{2cm}","p{2cm}","p{2cm}","p{2cm}","p{2cm}","p{2cm}","p{2cm}")),type="latex",table.placement = "H",include.rownames = F)
+@
+  W tabelach \ref{tab:statystykijakosciowe}-\ref{tab:statystykijakosciowe2} widzimy liczność wszystkich poziomów zmiennych jakościowych. 
+Najważniejszą informacją jest dla nas liczność grup w podziale ze względu na zmienną creditability. Liczba klientów "dobrych" (poziom 0) wynosi 700, zaś "złych" (poziom 1) - 300. Zatem nasze dane możemy uznać za niezbalansowane.
+\section{Wykresy}
+W tym rozdziale zaprezentujemy wykresy mogące pomóc w zrozumieniu danych. Dla zmiennych ciągłych zaprezentujemy histogramy, dodatkowo dla tych z nich które przyjmują zróżnicowane wartości, umieścimy box-ploty. Dla zmiennych kategorycznych narysujemy wykresy słupkowe pokazujące liczność danej zmiennej z podziałem na creditability.
+\begin{figure}[H]
+<<echo=FALSE,fig=TRUE, warning=FALSE>>=
+  library(ggplot2)
+library(gridExtra)
+ggplot(dane,aes(x=creditability,fill=creditability))+
+  geom_bar()
+@
+  \caption{Histogram dla zmiennej creditability}\label{fig:creditability}
+\end{figure}
+Rysunek \ref{fig:creditability} potwierdza rozkład zmiennej creditability, mamy 300 obserwacji należących do klasy pozytywnej oraz 700 do negatywnej.
+
+\begin{figure}[H]
+<<echo=FALSE,fig=TRUE>>=
+  p1 <- ggplot(dane,mapping=aes(x=`Duration in month`,fill=creditability))+
+  geom_histogram(binwidth=10,position="dodge")
+p2 <- ggplot(dane,mapping=aes(x=creditability,y=`Duration in month`))+
+  geom_boxplot()
+grid.arrange(p1, p2, ncol=2)
+@
+  \caption{Histogram i box-plot dla zmiennej Duration in month}\label{fig:histduration}
+\end{figure}
+Na Rysunku \ref{fig:histduration}  zaprezentowany jest box-plot oraz histogram dla zmiennej Duration in month. 
+Możemy zauważyć, że mediana czasu trwania jest wyższa w przypadku osób które kredytu nie dostały.
+\begin{figure}[H]
+<<echo=FALSE,fig=TRUE>>=
+  p3 <- ggplot(dane,mapping=aes(x=`Credit amount`,fill=creditability))+
+  geom_histogram(binwidth=500,position="dodge")
+p4 <- ggplot(dane,mapping=aes(x=creditability,y=`Credit amount`))+
+  geom_boxplot()
+grid.arrange(p3,p4,ncol=2)
+@
+  \caption{Histogram i box-plot dla zmiennej Credit amount}\label{fig:histamount}
+\end{figure}
+Na zawartym w Rysunku \ref{fig:histamount} box-plocie widzimy, że to czy otrzymano kredyt czy nie, zależy od jego kwoty. Przy wyższych kwotach kredytu liczba osób, które nie dostały kredytu zaczyna przeważać nad liczbą tych, które go otrzymały.
+\begin{figure}[H]
+<<echo=FALSE,fig=TRUE>>=
+  a1 <- ggplot(dane,mapping=aes(x=`Installment rate in percentage of disposable income`,fill=creditability))+
+  geom_histogram(binwidth=1,position="dodge")
+a2 <- ggplot(dane,mapping=aes(x=`Present residence since`,fill=creditability))+
+  geom_histogram(binwidth=1,position="dodge")
+grid.arrange(a1,a2,ncol=2)
+@
+  \caption{Histogramy dla zmiennych kolejno Installment rate in percentage of disposable income i Present residence since }\label{fig:histrate}
+\end{figure}
+\begin{figure}[H]
+<<echo=FALSE,fig=TRUE>>=
+  p5 <- ggplot(dane,mapping=aes(x=`Age in years`,fill=creditability))+
+  geom_histogram(binwidth=5,position="dodge")
+p6 <- ggplot(dane,mapping=aes(x=creditability,y=`Age in years`))+
+  geom_boxplot()
+grid.arrange(p5,p6,ncol=2)
+@
+  \caption{Histogram i box-plot dla zmiennej Age in years}\label{fig:histage}
+\end{figure}
+Na box-plocie z Rysunku \ref{fig:histage} widzimy, że mediana wieku osób, które nie otrzymały kredytu jest niższa niż osób, które go dostały. Najwięcej wnioskujących o kredyt osób jest między 25 a 35 rokiem życia. 
+\begin{figure}[H]
+<<echo=FALSE,fig=TRUE>>=
+  a3 <- ggplot(dane,mapping=aes(x=`Number of existing credits at this bank`,fill=creditability))+
+  geom_histogram(binwidth=1,position="dodge")
+a4 <- ggplot(dane,mapping=aes(x=`Number of people being liable to provide maintenance for`,fill=creditability))+
+  geom_histogram(binwidth=1,position="dodge")
+grid.arrange(a3,a4,ncol=2)
+@
+  \caption{Histogramy dla zmiennych Number of existing credits at this bank i Number of people being liable to provide maintenance for}\label{fig:histnrcredits}
+\end{figure}
+\begin{figure}[H]
+<<echo=FALSE,fig=TRUE>>=
+  a5 <- ggplot(data=dane)+
+  geom_bar(mapping=aes(x=`Status of existing checking account`,fill=creditability),position="dodge")
+a6 <- ggplot(data=dane)+
+  geom_bar(mapping=aes(x=`Credit history`,fill=creditability),position="dodge")
+grid.arrange(a5,a6,ncol=2)
+@
+  \caption{Wykresy słupkowe dla zmiennych Status of existing checking account i Credit history}\label{fig:histstatus}
+\end{figure}
+\begin{figure}[H]
+<<echo=FALSE,fig=TRUE>>=
+  ggplot(data=dane)+
+  geom_bar(mapping=aes(x=Purpose,fill=creditability),position="dodge")
+@
+  \caption{Wykres słupkowy dla zmiennej Purpose}\label{fig:histpurpose}
+\end{figure}
+\begin{figure}[H]
+<<echo=FALSE,fig=TRUE>>=
+  b3 <- ggplot(data=dane)+
+  geom_bar(mapping=aes(x=`Present employment since`,fill=creditability),position="dodge")
+b4 <- ggplot(data=dane)+
+  geom_bar(mapping=aes(x=`Personal status and sex`,fill=creditability),position="dodge")
+grid.arrange(b3,b4,ncol=2)
+@
+  \caption{Wykresy słupkowe dla zmiennych Present employment since i Personal status and sex}\label{fig:histemployment}
+\end{figure}
+\begin{figure}[H]
+<<echo=FALSE,fig=TRUE>>=
+  b5 <- ggplot(data=dane)+
+  geom_bar(mapping=aes(x=`Other debtors`,fill=creditability),position="dodge")
+b6 <- ggplot(data=dane)+
+  geom_bar(mapping=aes(x=Property,fill=creditability),position="dodge")
+grid.arrange(b5,b6,ncol=2)
+@
+  \caption{Wykresy słupkowe dla zmiennych Other debtors i Property}\label{fig:histdebtors}
+\end{figure}
+\begin{figure}[H]
+<<echo=FALSE,fig=TRUE>>=
+  b7 <- ggplot(data=dane)+
+  geom_bar(mapping=aes(x=`Other installment plans`,fill=creditability),position="dodge")
+b8 <- ggplot(data=dane)+
+  geom_bar(mapping=aes(x=Housing,fill=creditability),position="dodge")
+grid.arrange(b7,b8,ncol=2)
+@
+  \caption{Wykresy słupkowe dla zmiennych Other installment plans i Housing}\label{fig:histplans}
+\end{figure}
+\begin{figure}[H]
+<<echo=FALSE,fig=TRUE>>=
+  b9 <- ggplot(data=dane)+
+  geom_bar(mapping=aes(x=Job,fill=creditability),position="dodge")
+b10 <- ggplot(data=dane)+
+  geom_bar(mapping=aes(x=Telephone,fill=creditability),position="dodge")
+grid.arrange(b9,b10,ncol=2)
+@
+  \caption{Wykresy słupkowe dla zmiennych Job i Telephone}\label{fig:histjob}
+\end{figure}
+\begin{figure}[H]
+<<echo=FALSE,fig=TRUE>>=
+  b1 <- ggplot(data=dane)+
+  geom_bar(mapping=aes(x=`foreign worker`,fill=creditability),position="dodge")
+b2 <- ggplot(data=dane)+
+  geom_bar(mapping=aes(x=`Savings account`,fill=creditability),position="dodge")
+grid.arrange(b1,b2,ncol=2)
+@
+  \caption{Wykresy słupkowe dla zmiennych foreign worker i Savings account}\label{fig:histworker}
+\end{figure}
+Rysunki \ref{fig:histstatus}-\ref{fig:histworker} przedstawiają wykresy słupkowe dla zmiennych kategorycznych. Możemy z nich odczytać jak na danym poziomie rozkładają się obserwacje z klasy pozytywnej oraz negatywnej. 
+<<echo=FALSE,warning=FALSE>>=
+  library(plyr)
+@
+  <<echo=FALSE>>=
+  dane$Purpose <- revalue(dane$Purpose, c("A40"="nowy samochód", "A41"="stary samochód", "A42"="meble","A43"="telewizja","A44"="sprzęt gospodarstwa domowego","A45"="naprawy","A46"="edukacja","A48"="przekwalifikowanie","A49"="biznes","A410"="inne"))
+@
+  \begin{figure}[H]
+<<echo=FALSE,fig=TRUE>>=
+  ggplot(data=dane)+
+  geom_boxplot(aes(x=reorder(Purpose, `Credit amount`, FUN=median), y = `Credit amount`))+
+  coord_flip()+
+  labs(x="Purpose")
+@
+  \caption{Rozkład kwoty kredytu w zależności od celu}\label{fig:pyt1}
+\end{figure}
+Ciekawym pytaniem, na które możemy uzyskać odpowiedź analizując dane, jest np. pytanie "Na co brane są najwyższe kredyty?".
+Rysunek \ref{fig:pyt1} wskazuje nam odpowiedź. Najwyższą medianę mamy w przypadku, gdy cel określony jest jako inny. Nie jest to zaskoczeniem, ponieważ w celu kredytu nie 
+mamy zawartego m.in. zakupu mieszkania. Co zaskakujące, większą medianę kwoty kredytu mamy w przypadku starego samochodu, a nie jakbyśmy się spodziewali nowego.
+%\subsection{Jak się ma historia kredytowa do długości zatrudnienia?}
+%\begin{figure}[H]
+%<<echo=FALSE,fig=TRUE>>=
+%  ggplot(dane)+
+% geom_count(aes(x=`Credit history`, y=`Present employment since`))
+%@
+%  \caption{Kowariancja między zmiennymi Credit history i Present employment since}
+%\end{figure}
+Można się również zastanawiać nad tym czy większe kredyty spłaca się dłużej. Na Rysunku \ref{fig:pyt3} mozemy dostrzec pewną zależność między zmiennymi Credit amount oraz Duration in month. Widzimy także kilka obserwacji odstających od pozostałych. Dwóch klientów chciało otrzymać bardzo wysoki kredyt rozłożony na krótki okres czasu. 
+Sprawdzimy, czy te osoby otrzymały kredyt czy nie.
+\begin{figure}[H]
+<<echo=FALSE,fig=TRUE>>=
+  ggplot(dane)+
+  geom_point(aes(x=`Duration in month`,y=`Credit amount`,color=Purpose))
+@
+  \caption{Zależność między kwotą kredytu a trwaniem kredytu wyrażonym w miesiącach, z podziałem na cel}\label{fig:pyt3}
+\end{figure}
+Z Rysunku \ref{fig:pyt4} możemy odczytać że osoby te nie otrzymały kredytu, zatem obserwacje te nie powinny wpływać na tworzone modele.
+
+\begin{figure}[H]
+<<echo=FALSE,fig=TRUE>>=
+  ggplot(dane)+
+  geom_point(aes(x=`Duration in month`,y=`Credit amount`,color=creditability))
+@
+  \caption{Zależność między kwotą kredytu a trwaniem kredytu wyrażonym w miesiącach, z podziałem na zdolność kredytową}\label{fig:pyt4}
+\end{figure}
+%Tworzymy zmienną "miesięczna wysokość raty"
+Możemy także zastanowić się, czy na otrzymanie kredytu ma wpływ wysokość miesięcznej raty. Tworzymy w tym celu nową zmienną monthly\_installment.
+<<echo=FALSE,warning=FALSE,eval=FALSE>>=
+  library(dplyr)
+@
+  <<echo=FALSE>>=
+  nowe_dane <- mutate(dane, monthly_installment = round(`Credit amount`/`Duration in month`))
+@
+ 
+\begin{figure}[H]
+<<echo=FALSE,fig=TRUE>>=
+  ggplot(nowe_dane)+
+  geom_histogram(aes(x=nowe_dane$monthly_installment,fill=nowe_dane$creditability),binwidth = 100, position="dodge")
+@
+  \caption{Histogram zmiennej monthly\_installment}\label{fig:mi}
+\end{figure}
+Rysunek \ref{fig:mi} pokazuje, że osoby, które wnioskowały o kredyty z dużą miesieczną ratą, nie otrzymały kredytu. Można także zauważyć, że od pewnej wysokości raty, liczba osób które otrzymały kredyt i go nie otrzymały wyrównuje się.
+<<echo=FALSE,results='asis'>>=
+  print(xtable(cor(dane[,c(2,5,8,11,13,16,18)]), caption="Korelacje dla zmiennych ciągłych",label="tab:korelacje",align = c("p{3cm}", "p{1.5cm}","p{1.5cm}","p{2cm}","p{2cm}","p{1.5cm}","p{2cm}","p{2cm}")),type="latex",table.placement="H")
+@
+W Tabeli \ref{tab:korelacje} widzimy wartości korelacji dla zmiennych ciągłych. Większość zmiennych nie jest skorelowana. Wartość powyżej 0.5 mamy jedynie w przypadku Credit amount oraz Duration in month.
+
+  \section{Modele}
+Do danych dopasujemy następujące modele: regresji logistycznej, regresji logistycznej ze stepem, regresji logistycznej z kategoryzacją, regresji logistycznej z wartościami WOE, liniowej analizy dyskryminacyjnej, kwadratowej analizy dyskryminacyjnej, drzew decyzyjnych i k najbliższych sąsiadów.
+W celu uzyskania wiarygodniejszych wyników, dane podzielimy na dwa zbiory: treningowy i testowy. Najpierw sprawdzimy działanie modeli na zbiorze treningowym, przeprowadzając w tym celu 5-krotną walidację krzyżową. Następnie, najlepsze modele zbudujemy dla całego zbioru treningowego i porównamy wyniki na zbiorze testowym. Ponieważ analizowane dane mają nierówny rozkład klas, zastosujemy tzw. stratified sampling.
+W każdej iteracji walidacji wyznaczymy wskaźniki modelu takie jak: dokładność(ACC), czułość(TPR), specyficzność(TNR), F1 oraz średni koszt złej klasyfikacji(MMC). Następnie podamy średnie tych wskaźników w danym modelu. Ponadto, zmodyfikujemy te modele, aby stały się "cost-sensitive" za pomocą zmiany thresholdu. Wartość 0.5 powyżej której do tej pory klasyfikowaliśmy do klasy 1 zamienimy na $p^*= \frac{C(1,0)}{C(1,0)+C(0,1)},$ gdzie $C(1,0)$ oznacza koszt zaklasyfikowania dobrego klienta jako złego, a $C(0,1)$ złego jako dobrego. W przypadku naszych danych macierz kosztów wygląda następująco:
+<<echo=FALSE,results='asis'>>=
+cost_matrix <- matrix(nrow=2, ncol=2, c(0,5,1,0),byrow=TRUE)
+colnames(cost_matrix) <- c("actual good", "actual bad")
+rownames(cost_matrix) <- c("predicted good", "predicted bad")
+print(xtable(cost_matrix,caption="Macierz kosztów dla danych German Credit", label="tab:koszty"),sanitize.rownames.function=function(x){x}, type="latex",table.placement = "H")
+@
+Zakładając, że dysponujemy macierzą pomyłek:
+<<echo=FALSE,results='asis'>>=
+confusion_matrix <- matrix(nrow=2, ncol=2, c("TP","FN","FP","TN"),byrow=TRUE)
+colnames(confusion_matrix) <- c("actual good", "actual bad")
+rownames(confusion_matrix) <- c("predicted good", "predicted bad")
+print(xtable(confusion_matrix,caption="Macierz pomyłek", label="tab:pomylka"),sanitize.rownames.function=function(x){x}, type="latex",table.placement = "H")
+@
+pozostałe wskaźniki możemy obliczyć korzystając ze wzorów:
+  \begin{itemize}
+\item $ACC=\frac{TP+TN}{TN+TP+FP+FN}$
+  \item $TPR =\frac{TP}{TP+FN},$
+  \item $TNR=\frac{TN}{TN+FP},$
+  %\item $ FPR = \frac{FP}{TN+FP},$
+  \item $F_1 =\frac{2 \cdot TP}{2 \cdot TP + FP +FN},$
+  \item $MMC= \frac{FP \cdot C(0,1) + FN \cdot C(1,0)}{TP + TN + FP + FN}  $.
+  \end{itemize}
+  Zaznaczmy, że w przypadku cost-sensitive learning uzyskanie wysokiej dokładności nie jest najważniejsze. Bardziej pożądane jest uzyskanie wysokiego $F_1$, a w przypadku tak rozłożonych kosztów jak u nas także wysokiej czułości. Przypomnijmy, że im $F_1$ jest bliższe 1 tym model jest lepszy. Ważne jest również uzyskanie jak najmniejszych kosztów, czyli minimalizacja wskaźnika MMC.
+\subsection{Model regresji logistycznej}
+Pierwszy model, który został zbudowany oparty jest na regresji logistycznej. Do jego utworzenia wykorzystujemy wszystkie zmienne objaśniające zawarte w zbiorze danych. Następnie wyliczamy wskaźniki dla każdej z iteracji walidacji.  
+<<echo=FALSE, warning=FALSE, message=FALSE>>=
+  library(dismo)
+#library(fifer)
+dane_losowo0<-dane[sample(nrow(dane)),]
+#folds <- cut(seq(1,nrow(dane_losowo)),breaks=5,labels=FALSE)
+folds0 <- kfold(dane_losowo0, 4, creditability)
+indeksy_test_final <- which(folds0==4,arr.ind=TRUE)
+  test_final <- dane_losowo0[indeksy_test_final, ]
+  dane_losowo<- dane_losowo0[-indeksy_test_final, ]
+folds <- kfold(dane_losowo, 5, dane_losowo$creditability)
+#folds <- stratified(dane_losowo, creditability, 0.2)
+@
+
+<<echo=FALSE, eval=FALSE>>=
+print((sum(test_final$creditability==1))/length(test_final$creditability))
+@
+
+<<echo=FALSE, eval=FALSE>>=
+for (i in 1:5){
+  dane_losowo[which(folds==i,arr.ind=TRUE),] -> x
+  print ((sum(x$creditability==1))/length(x$creditability))
+}
+@
+
+  <<echo=FALSE>>=
+  # poniższa funkcja wylicza ACC itd dla danej walidacji 
+  wskazniki <- function(klasy, test){ # klasy - wektor przewidywanych klas dla zbioru testowego, test - zbiór testowy
+    vec <- c()
+    for (k in 1:length(klasy))
+    {if (klasy[k]==0&test$creditability[k]==0) {vec[k]="TN"} else {if (klasy[k]==1&test$creditability[k]==0) {vec[k]="FP"} else{if (klasy[k]==0&test$creditability[k]==1)
+    {vec[k]="FN"} else {vec[k]="TP"}}}}
+    N <- sum(sum(vec=="TN")+sum(vec=="FP"))
+    P <- sum(sum(vec=="FN")+sum(vec=="TP"))
+    Ng <- sum(sum(vec=="TN")+sum(vec=="FN"))
+    Pg <- sum(sum(vec=="FP")+sum(vec=="TP"))
+    TPR <- sum(vec=="TP")/P # czulosc
+    TNR <- sum(vec=="TN")/N # specyficznosc
+    FPR <- sum(vec=="FP")/N
+    blad <- mean(klasy != test$creditability)
+    ACC <- 1-blad
+    F1 <- 2*TPR*FPR/(TPR+FPR)
+    return(c(ACC, TPR, TNR, F1))
+  }
+@
+  
+  <<echo=FALSE, eval = TRUE>>=
+  #macierz kosztów
+  cost_matrix <- matrix(nrow=2, ncol=2, c(0,1,5,0),byrow=TRUE)
+colnames(cost_matrix) <- c("predicted good", "predicted bad")
+rownames(cost_matrix) <- c("actual good", "actual bad")
+
+#threshold p*
+th = cost_matrix[1,2]/ (cost_matrix[2,1] + cost_matrix[1,2])
+
+# werr <- function(klasy, test, cost_matrix){ #klasy - przewidywane, test - zbiór testowy
+#   c01 <- cost_matrix[2,1]
+#   c10 <- cost_matrix[1,2]
+#   w <- rep(1, length(klasy)) # tworzymy wektor wag
+#   for (i in (1:length(klasy))){
+#     if (test[i,21]==0) {w[i] = c10}
+#     else {w[i] = c01}
+#   }
+#   return(weighted.mean(klasy!=test[,21], w)) 
+# }
+
+# mean misclassification cost
+mmc <- function(klasy, test, cost_matrix){ #klasy - przewidywane, test - zbiór testowy
+  c01 <- cost_matrix[2,1]
+  c10 <- cost_matrix[1,2]
+  w <- c() # tworzymy wektor wag
+  for (i in (1:length(klasy))){
+    if (test[i,21]==0) {w[i] = c10}
+    else {w[i] = c01}
+  }
+  return((sum(as.numeric(klasy!=test[,21])*w))/length(klasy))
+}
+mmc_do_knn_ciagle <- function(klasy, test, cost_matrix){ #klasy - przewidywane, test - zbiór testowy
+  c01 <- cost_matrix[2,1]
+  c10 <- cost_matrix[1,2]
+  w <- c() # tworzymy wektor wag
+  for (i in (1:length(klasy))){
+    if (test[i,8]==0) {w[i] = c10}
+    else {w[i] = c01}
+  }
+  return((sum(as.numeric(klasy!=test[,8])*w))/length(klasy))
+}
+@
+\begin{figure}[H]
+<<echo=FALSE,warning=FALSE, fig=TRUE,message=FALSE>>=
+library(pROC)
+  mat_lr_all <- matrix(nrow=5, ncol = 5)
+  mat_lr_th <- matrix(nrow=5, ncol = 5) # dla thresholdu
+  colors = c('blue', 'red', 'green', 'yellow', 'orange')
+  
+  for(i in 1:5){
+    indeksy_test <- which(folds==i,arr.ind=TRUE)
+    test <- dane_losowo[indeksy_test, ]
+    train <- dane_losowo[-indeksy_test, ]
+    model_rl <- glm(formula = creditability~., family = binomial(link='logit'), data = train)
+    prob <- predict(model_rl,test,type='response')
+    roc <- roc(test$creditability~prob)
+    plot(roc, col=colors[i], add = (i!=1), lwd = 0.7)
+    if (i==5){legend(x=-0.25, y=0.6, lty =1, legend = c("1", "2", "3", "4", "5"), col = colors)}
+    klasy <- ifelse(prob > 0.5,1,0)
+    mat_lr_all[i,] <- c(wskazniki(klasy, test), mmc(klasy, test, cost_matrix)) # liczymy 'wskazniki' dla danej walidacji
+    # zastosowanie thresholdu
+    klasy_th <- ifelse(prob > th,1,0)
+    mat_lr_th[i,] <- c(wskazniki(klasy_th, test), mmc(klasy_th, test, cost_matrix)) 
+  }
+@
+\caption{Krzywe ROC uzyskane dla każdej walidacji (Regresja logistyczna)}\label{fig:roc1}
+\end{figure}
+Rysunek \ref{fig:roc1} prezentuje krzywe ROC uzyskane w każdej z iteracji dla modelu, w którym punkt odcięcia ustalony jest jako 0.5.
+<<echo=FALSE>>=
+colMeans(mat_lr_all) -> v_lr
+colMeans(mat_lr_th) -> v_lr_th  
+@  
+<<echo=FALSE, eval=TRUE, results='asis'>>=
+mat_lr_all <- rbind(mat_lr_all,v_lr)
+colnames(mat_lr_all) <- c("ACC","TPR","TNR","F1", "MMC")
+rownames(mat_lr_all) <- c("1", "2", "3", "4", "5", "średnia")
+print(xtable(mat_lr_all,caption="Tabela wskaźników dla 5-fold cross-validation w modelu regresji logistycznej", label="tab:cvreg_all"),sanitize.rownames.function=function(x){x}, type="latex",table.placement = "H")
+@
+
+<<echo=FALSE, eval=TRUE, results='asis'>>=
+mat_lr_th <- rbind(mat_lr_th,v_lr_th)
+colnames(mat_lr_th) <- c("ACC","TPR","TNR","F1", "MMC")
+rownames(mat_lr_th) <- c("1", "2", "3", "4", "5", "średnia")
+print(xtable(mat_lr_th,caption="Tabela wskaźników dla 5-fold cross-validation w modelu regresji logistycznej z p=1/6", label="tab:cvregth_all"),sanitize.rownames.function=function(x){x}, type="latex",table.placement = "H")
+@
+Tabele \ref{tab:cvreg_all}-\ref{tab:cvregth_all} przedstawiają wartości wskaźników takich jak dokładność, czułość, specyficzność, współczynnik $F_1$ oraz MMC. Pierwsza z tabel dotyczy modelu, w którym nie uwzględniono różnych kosztów popełnianych błędów, tzn. punkt odcięcia wynosi 0.5. Dokładność uzyskana przy tak ustalonym $p$ jest stosunkowo wysoka. Wynosi średnio 0.75. Jednak jak już wcześniej wspomnieliśmy, ważniejszym wskaźnikiem jest m.in. czułość, która wynosi średnio 0.48. Otrzymaliśmy również dość niską wartość $F_1$. Średnia wynosi 0.21 (dla modelu losowego wynosi 0). Obserwujemy także wysokie koszty złej klasyfikacji. Sytuacja zmiena się jeśli zmienimy p z 0.5 na 1/6. Wówczas, jak widzimy w drugiej z tabel, dokładność nieco spada, ale za to znacząco rośnie czułość oraz wartość $F_1$. Zauważamy także znaczną redukcję kosztów z 0.84 do 0.58.
+\subsection{Regresja logistyczna ze stepem}
+Kolejnym z rozpatrywanych modeli jest model regresji logistycznej, w której dobór zmiennych następuje z użyciem metody krokowej (funkcja {\it step}). Wybierane są te zmienne dla których wartość AIC jest najmniejsza i na nich budowany jest model.
+  %Dokładność, czułość, specyficzność, F1:
+\begin{figure}[H]
+<<echo=FALSE,warning=FALSE, fig=TRUE,message=FALSE>>=
+mat <- matrix(nrow=5, ncol = 5)
+mat_th <- matrix(nrow=5, ncol = 5) # dla thresholdu
+colors = c('blue', 'red', 'green', 'yellow', 'orange')
+
+for(i in 1:5){
+  indeksy_test <- which(folds==i,arr.ind=TRUE)
+  test <- dane_losowo[indeksy_test, ]
+  train <- dane_losowo[-indeksy_test, ]
+  model <- glm(formula = creditability~., family = binomial(link='logit'), data = train)
+  model_rl <- step(model,trace=0)
+  prob <- predict(model_rl,test,type='response')
+  roc <- roc(test$creditability~prob)
+  plot(roc, col=colors[i], add = (i!=1), lwd = 0.7)
+  if (i==5){legend(x=-0.25, y=0.6, lty =1, legend = c("1", "2", "3", "4", "5"), col = colors)}
+  klasy <- ifelse(prob > 0.5,1,0)
+  mat[i,] <- c(wskazniki(klasy, test), mmc(klasy, test, cost_matrix)) # liczymy 'wskazniki' dla danej walidacji
+  # zastosowanie thresholdu
+  klasy_th <- ifelse(prob > th,1,0)
+  mat_th[i,] <- c(wskazniki(klasy_th, test), mmc(klasy_th, test, cost_matrix)) 
+}
+@
+\caption{Krzywe ROC uzyskane dla każdej walidacji (Regresja logistyczna ze stepem)}\label{fig:roc11}
+\end{figure}
+
+Rysunek \ref{fig:roc11} prezentuje krzywe ROC uzyskane w każdej z iteracji dla modelu, w którym punkt odcięcia ustalony jest jako 0.5.
+<<echo=FALSE>>=
+colMeans(mat) -> v
+colMeans(mat_th) -> v_th
+@
+  
+  <<echo=FALSE, eval=TRUE, results='asis'>>=
+mat<-rbind(mat, v)
+colnames(mat) <- c("ACC","TPR","TNR","F1", "MMC")
+rownames(mat) <- c("1", "2", "3", "4", "5", "średnia")
+print(xtable(mat,caption="Tabela wskaźników dla 5-fold cross-validation w modelu regresji logistycznej ze stepem", label="tab:cvreg"),sanitize.rownames.function=function(x){x}, type="latex",table.placement = "H")
+@
+  
+  <<echo=FALSE, eval=TRUE, results='asis'>>=
+mat_th<-rbind(mat_th, v_th)
+colnames(mat_th) <- c("ACC","TPR","TNR","F1", "MMC")
+rownames(mat_th) <- c("1", "2", "3", "4", "5", "średnia")
+print(xtable(mat_th,caption="Tabela wskaźników dla 5-fold cross-validation w modelu regresji logistycznej ze stepem z p=1/6", label="tab:cvregth"),sanitize.rownames.function=function(x){x}, type="latex",table.placement = "H")
+@
+Tabele \ref{tab:cvreg}-\ref{tab:cvregth} zawierają wartości wskaźników uzyskane w 5-krotnej walidacji. Podobnie jak w przypadku modelu regresji logistycznej nieuwzględniającym metody krokowej bardziej satysfakcjonujące wyniki otrzymaliśmy w przypadku, gdy threshold został zmieniony na 1/6.
+Otrzymana wówczas średnia czułość jest wyższa niż dla p=0.5.
+  \subsection{Model regresji logistycznej z kategoryzacją}
+Do stworzenia kolejnego modelu po raz kolejny wykorzystamy regresję logistyczną z metodą krokową. Tym razem do wybrania zmiennych posłużymy się tzw. Information Value, zdefiniowane następującym wzorem:
+$$
+IV=\sum_{i}\operatorname{ln}\frac{p_G(x_i)}{p_B(x_i)}(p_G(x_i)-p_B(x_i)),
+$$
+gdzie $p_B$ i $p_G$ są odpowiednio gęstościami rozkładów $X|B$ i $X|G$, przy czym $X|B$ i $X|G$ oznaczają kolejno zmienne losowe w grupie złych i dobrych klientów.
+W przypadku, gdy dla pewnej zmiennej dyskretnej $X$, $IV\leq 0.02$ to predyktor $X$ należy pominąć. Gdy $IV \in (0.02,0.1]$ to $X$ ma słabą moc predykcyjną. Gdy $IV \in (0.1,0.3]$ to $X$ ma średnią moc predykcyjną. Jeżeli $IV>0.5$ to powinniśmy skontrolować predyktor $X$.
+Zgodnie z powyższym usuwamy zmienne, dla których otrzymujemy $IV \leq 0.02$.
+\begin{figure}[H]
+<<echo=FALSE, warning=FALSE,fig=TRUE,message=FALSE>>=
+  library(woeBinning)
+mat2 <- matrix(nrow=5, ncol = 5)
+mat2_th <- matrix(nrow=5, ncol = 5)
+
+for(i in 1:5){
+  indeksy_test <- which(folds==i,arr.ind=TRUE)
+  test <- dane_losowo[indeksy_test, ]
+  train <- dane_losowo[-indeksy_test, ]
+  woe.binning(train,'creditability',train) -> iv
+  iv[which(iv[,3]>=0.02),] -> ivwieksze
+  laczenie <- woe.binning.deploy(train, ivwieksze,min.iv.total=0.02)
+  testlaczenie <- woe.binning.deploy(test,ivwieksze,min.iv.total=0.02,add.woe.or.dum.var='woe')
+  laczeniebin <- cbind(laczenie[ , grepl( "binned" , names( laczenie ) ) ],laczenie$creditability)
+  regfitbin <- glm(laczeniebin$`laczenie$creditability`~.,family=binomial(link=logit),data=laczeniebin)
+  regfitbin1 <- step(regfitbin, trace=0)
+  prob <- predict(regfitbin1, testlaczenie, type='response')
+  roc <- roc(testlaczenie$creditability~prob)
+  plot(roc, col=colors[i], add = (i!=1), lwd = 0.7)
+  if (i==5){legend(x=-0.25, y=0.6, lty =1, legend = c("1", "2", "3", "4", "5"), col = colors)}
+  klasy <- ifelse(prob > 0.5,1,0)
+  mat2[i,] <- c(wskazniki(klasy, test), mmc(klasy, test, cost_matrix)) # liczymy 'wskazniki' dla danej walidacji
+  # zastosowanie thresholdu
+  klasy_th <- ifelse(prob > th,1,0)
+  mat2_th[i,] <- c(wskazniki(klasy_th, test), mmc(klasy_th, test, cost_matrix)) 
+}
+@
+\caption{Krzywe ROC uzyskane dla każdej walidacji (Regresja logistyczna z kategoryzacją)}\label{fig:roc2}
+\end{figure}
+<<echo=FALSE>>=
+  colMeans(mat2) -> v2
+colMeans(mat2_th) -> v2_th
+@
+  
+  <<echo=FALSE, eval=TRUE, results='asis'>>=
+mat2 <- rbind(mat2, v2)  
+colnames(mat2) <- c("ACC","TPR","TNR","F1", "MMC")
+rownames(mat2) <- c("1", "2", "3", "4", "5", "średnia")
+print(xtable(mat2,caption="Tabela wskaźników dla 5-fold cross-validation w modelu regresji logistycznej z kategoryzacją ", label="tab:cvreg2"),sanitize.rownames.function=function(x){x}, type="latex",table.placement = "H")
+@
+  
+  <<echo=FALSE, eval=TRUE, results='asis'>>=
+mat2_th <- rbind(mat2_th, v2_th)
+  colnames(mat2_th) <- c("ACC","TPR","TNR","F1", "MMC")
+rownames(mat2_th) <- c("1", "2", "3", "4", "5", "średnia")
+print(xtable(mat2_th,caption="Tabela wskaźników dla 5-fold cross-validation w modelu regresji logistycznej z kategoryzacją  z p=1/6", label="tab:cvregth2"),sanitize.rownames.function=function(x){x}, type="latex",table.placement = "H")
+@
+  
+  \subsection{Model regresji logistycznej z wartościami WoE}
+Kolejny model, który zbudujemy również jest oparty na regresji logistycznej z metodą krokową. Jednak tym razem po zastosowaniu kryterium IV, wartości zmiennych zastąpimy odpowiadającymi im wartościami WoE, zdefiniowanej jako
+$$WoE(x_i) = \operatorname{ln}\frac{p_G(x_i)}{p_B(x_i)}.$$
+\begin{figure}[H]
+<<echo=FALSE, warning=FALSE,fig=TRUE,message=FALSE>>=
+  mat3 <- matrix(nrow=5, ncol = 5)
+mat3_th <- matrix(nrow=5, ncol = 5)
+
+for(i in 1:5){
+  indeksy_test <- which(folds==i,arr.ind=TRUE)
+  test <- dane_losowo[indeksy_test, ]
+  train <- dane_losowo[-indeksy_test, ]
+  woe.binning(train,'creditability',train) -> iv
+  iv[which(iv[,3]>=0.02),] -> ivwieksze
+  laczenie <- woe.binning.deploy(train, ivwieksze,min.iv.total=0.02,add.woe.or.dum.var='woe')
+  testlaczenie <- woe.binning.deploy(test,ivwieksze,min.iv.total=0.02,add.woe.or.dum.var='woe')
+  woewartosci <- cbind(laczenie[ , grepl( "woe" , names( laczenie ) ) ],laczenie$creditability)
+  woewartoscitest <- cbind(testlaczenie[ , grepl( "woe" , names( testlaczenie ) ) ],testlaczenie$creditability)
+  regfitwoe <- glm(woewartosci$`laczenie$creditability`~.,family=binomial(link=logit),data=woewartosci)
+  regfitwoe1 <- step(regfitwoe, trace=0)
+  prob <- predict(regfitwoe1,woewartoscitest,type='response')
+  klasy <- ifelse(prob > 0.5,1,0)
+  roc <- roc(testlaczenie$creditability~prob)
+  plot(roc, col=colors[i], add = (i!=1), lwd = 0.7)
+  if (i==5){legend(x=-0.25, y=0.6, lty =1, legend = c("1", "2", "3", "4", "5"), col = colors)}
+  mat3[i,] <- c(wskazniki(klasy, test), mmc(klasy, test, cost_matrix)) # liczymy 'wskazniki' dla danej walidacji
+  # zastosowanie thresholdu
+  klasy_th <- ifelse(prob > th,1,0)
+  mat3_th[i,] <- c(wskazniki(klasy_th, test), mmc(klasy_th, test, cost_matrix)) 
+}
+@
+  \caption{Krzywe ROC uzyskane dla każdej walidacji (Regresja logistyczna z wartościami WOE)}\label{fig:roc3}
+\end{figure}
+<<echo=FALSE>>=
+  colMeans(mat3) -> v3
+colMeans(mat3_th) -> v3_th
+@
+  
+  <<echo=FALSE, eval=TRUE, results='asis'>>=
+mat3 <- rbind(mat3, v3) 
+colnames(mat3) <- c("ACC","TPR","TNR","F1", "MMC")
+rownames(mat3) <- c("1", "2", "3", "4", "5", "średnia")
+print(xtable(mat3,caption="Tabela wskaźników dla 5-fold cross-validation w modelu regresji logistycznej z WOE ", label="tab:cvreg3"),sanitize.rownames.function=function(x){x}, type="latex",table.placement = "H")
+@
+  
+  <<echo=FALSE, eval=TRUE, results='asis'>>=
+mat3_th <- rbind(mat3_th, v3_th)  
+colnames(mat3_th) <- c("ACC","TPR","TNR","F1", "MMC")
+rownames(mat3_th) <- c("1", "2", "3", "4", "5", "średnia")
+print(xtable(mat3_th,caption="Tabela wskaźników dla 5-fold cross-validation w modelu regresji logistycznej z WOE z p=1/6", label="tab:cvregth3"),sanitize.rownames.function=function(x){x}, type="latex",table.placement = "H")
+@
+
+  \subsection{Liniowa analiza dyskryminacyjna}
+Następny model zbudujemy w oparciu o liniową analizą dyskryminacyjną. Ideą tej metody jest wyznaczenie hiperpłaszczyzny „najlepiej” separującej klasy. Granica decyzyjna między klasami 0 i 1 jest liniową funkcją wektora cech niezależnych $\mathbf{x}$. LDA możemy zastosować wyłącznie do zmiennych ilościowych, więc pominiemy inne zmienne przy tworzeniu modelu.
+\begin{figure}[H]
+<<echo=FALSE,fig=TRUE,message=FALSE>>=
+  library(MASS)
+
+mat4 <- matrix(nrow=5, ncol = 5)
+mat4_th <- matrix(nrow=5, ncol = 5)
+
+for(i in 1:5){
+  indeksy_test <- which(folds==i,arr.ind=TRUE)
+  test <- dane_losowo[indeksy_test, ]
+  train <- dane_losowo[-indeksy_test, ]
+  ldafit <- lda(creditability ~ `Status of existing checking account` + `Duration in month` + `Credit amount` 
+                + `Savings account` + `Present employment since` + `Installment rate in percentage of disposable income`
+                + `Present residence since` + `Age in years` + `Number of existing credits at this bank`
+                + `Number of people being liable to provide maintenance for`, data = train)
+  lda.pred <- predict(ldafit, newdata=test)
+  prob <- lda.pred$posterior[,2]
+  roc <- roc(test$creditability~prob)
+  plot(roc, col=colors[i], add = (i!=1), lwd = 0.7)
+  if (i==5){legend(x=-0.25, y=0.6, lty =1, legend = c("1", "2", "3", "4", "5"), col = colors)}
+  klasy <- ifelse(prob > 0.5,1,0)
+  mat4[i,] <- c(wskazniki(klasy, test), mmc(klasy, test, cost_matrix)) # liczymy 'wskazniki' dla danej walidacji
+  # zastosowanie thresholdu
+  klasy_th <- ifelse(prob > th,1,0)
+  mat4_th[i,] <- c(wskazniki(klasy_th, test), mmc(klasy_th, test, cost_matrix)) 
+}
+@
+  \caption{Krzywe ROC uzyskane dla każdej walidacji (LDA)}\label{fig:roc4}
+\end{figure}
+<<echo=FALSE>>=
+  colMeans(mat4) -> v4
+colMeans(mat4_th) -> v4_th
+@
+  
+  <<echo=FALSE, eval=TRUE, results='asis'>>=
+mat4 <- rbind(mat4, v4)
+  colnames(mat4) <- c("ACC","TPR","TNR","F1", "MMC")
+rownames(mat4) <- c("1", "2", "3", "4", "5", "średnia")
+print(xtable(mat4,caption="Tabela wskaźników dla 5-fold cross-validation w LDA ", label="tab:cvreg4"),sanitize.rownames.function=function(x){x}, type="latex",table.placement = "H")
+@
+  
+  <<echo=FALSE, eval=TRUE, results='asis'>>=
+mat4_th <- rbind(mat4_th, v4_th)
+  colnames(mat4_th) <- c("ACC","TPR","TNR","F1", "MMC")
+rownames(mat4_th) <- c("1", "2", "3", "4", "5", "średnia")
+print(xtable(mat4_th,caption="Tabela wskaźników dla 5-fold cross-validation w LDA z p=1/6", label="tab:cvregth4"),sanitize.rownames.function=function(x){x}, type="latex",table.placement = "H")
+@
+  \subsection{Kwadratowa analiza dyskryminacyjna}
+Kolejny model zbudujemy w oparciu o kwadratową analizą dyskryminacyjną, która jest modyfikacją wykorzystywanej wcześniej liniowej analizy dyskryminacyjnej. Ideą tej metody jest również wyznaczenie hiperpłaszczyzny „najlepiej” separującej klasy. Jednak granica decyzyjna jest w tym przypadku wielomianem drugiego rzędu wektora cech niezależnych $\mathbf{x}$. Podobnie jak LDA, QDA możemy zastosować wyłącznie do zmiennych ilościowych, więc pominiemy inne zmienne przy tworzeniu modelu.
+\begin{figure}[H]
+<<echo=FALSE,fig=TRUE,message=FALSE>>=
+  mat5 <- matrix(nrow=5, ncol = 5)
+mat5_th <- matrix(nrow=5, ncol = 5)
+
+for(i in 1:5){
+  indeksy_test <- which(folds==i,arr.ind=TRUE)
+  test <- dane_losowo[indeksy_test, ]
+  train <- dane_losowo[-indeksy_test, ]
+  qdafit <- qda(creditability ~ `Status of existing checking account` + `Duration in month` + `Credit amount` 
+                + `Savings account` + `Present employment since` + `Installment rate in percentage of disposable income`
+                + `Present residence since` + `Age in years` + `Number of existing credits at this bank`
+                + `Number of people being liable to provide maintenance for`, data = train)
+  qda.pred <- predict(qdafit, newdata=test)
+  prob <- qda.pred$posterior[,2]
+  roc <- roc(test$creditability~prob)
+  plot(roc, col=colors[i], add = (i!=1), lwd = 0.7)
+  if (i==5){legend(x=-0.25, y=0.6, lty =1, legend = c("1", "2", "3", "4", "5"), col = colors)}
+  klasy <- ifelse(prob > 0.5,1,0)
+  mat5[i,] <- c(wskazniki(klasy, test), mmc(klasy, test, cost_matrix)) # liczymy 'wskazniki' dla danej walidacji
+  # zastosowanie thresholdu
+  klasy_th <- ifelse(prob > th,1,0)
+  mat5_th[i,] <- c(wskazniki(klasy_th, test), mmc(klasy_th, test, cost_matrix)) 
+}
+@
+\caption{Krzywe ROC uzyskane dla każdej walidacji (QDA)}\label{fig:roc5}
+\end{figure}
+<<echo=FALSE>>=
+  colMeans(mat5) -> v5
+colMeans(mat5_th) -> v5_th
+@
+  
+  <<echo=FALSE, eval=TRUE, results='asis'>>=
+mat5 <- rbind(mat5, v5)
+  colnames(mat5) <- c("ACC","TPR","TNR","F1", "MMC")
+rownames(mat5) <- c("1", "2", "3", "4", "5", "średnia")
+print(xtable(mat5,caption="Tabela wskaźników dla 5-fold cross-validation w modelu QDA ", label="tab:cvreg5"),sanitize.rownames.function=function(x){x}, type="latex",table.placement = "H")
+@
+  
+<<echo=FALSE, eval=TRUE, results='asis'>>=
+mat5_th <-rbind(mat5_th, v5_th)  
+colnames(mat5_th) <- c("ACC","TPR","TNR","F1", "MMC")
+rownames(mat5_th) <- c("1", "2", "3", "4", "5", "średnia")
+print(xtable(mat5_th,caption="Tabela wskaźników dla 5-fold cross-validation w modelu QDA z p=1/6", label="tab:cvregth5"),sanitize.rownames.function=function(x){x}, type="latex",table.placement = "H")
+@
+  
+\subsection{Drzewa decyzyjne}
+Kolejnym modelem jest drzewo decyzyjne. Do wyboru drzewa w danej iteracji walidacji skorzystamy z metody pruningu opartej na kryterium kosztu złożności. Optymalne drzewo wybierzemy na podstawie reguły 1SE, tzn. naszym wyborem będzie drzewo o najmniejszym rozmiarze, dla którego ułamek błędnych klasyfikacji jest odległy o nie więcej niż jedno odchylenie standardowe od minimum ułamka błędnych klasyfikacji.
+\begin{figure}[H]
+<<echo=FALSE,message=FALSE,fig=TRUE, cache=FALSE>>=
+library(rpart)
+library(rpart.plot)
+
+mat6 <- matrix(nrow=5, ncol = 5)
+mat6_th <- matrix(nrow=5, ncol = 5)
+drzewa<-list()
+
+for(i in 1:5){
+  indeksy_test <- which(folds==i,arr.ind=TRUE)
+  test <- dane_losowo[indeksy_test, ]
+  train <- dane_losowo[-indeksy_test, ]
+  tree.large <- rpart(formula = creditability ~ ., data = train, method = "class", 
+                      cp=0.001)
+  tree.large$cptable -> x # tabelka z errorami
+  which.min(x[,4]) -> n # bierzemy n o najmniejszym błędzie
+  x[n,4] -> x0 # tenże błąd
+  x0std <- x[n, 5] # 1SE dla tego błędu
+  min(which(x[c(1:n),4]<=x0+x0std)) -> opt # bierzemy m najmniejszem, które <= n i jego error <= min. error + std 
+  x[opt,1] -> cp.opt
+  tree.large.pruned <- rpart(formula = creditability~., data = train, method = "class",
+                             cp=cp.opt)
+  drzewa[[i]] <- tree.large.pruned
+  prob <- predict(tree.large.pruned, newdata=test, type = "prob")[,2]
+  klasy <- ifelse(prob > 0.5,1,0)
+  roc <- roc(test$creditability~prob)
+  plot(roc, col=colors[i], add = (i!=1), lwd = 0.7)
+  if (i==5){legend(x=-0.25, y=0.6, lty =1, legend = c("1", "2", "3", "4", "5"), col = colors)}
+  mat6[i,] <- c(wskazniki(klasy, test), mmc(klasy, test, cost_matrix)) # liczymy 'wskazniki' dla danej walidacji
+  # zastosowanie thresholdu
+  klasy_th <- ifelse(prob > th,1,0)
+  mat6_th[i,] <- c(wskazniki(klasy_th, test), mmc(klasy_th, test, cost_matrix)) 
+}
+@
+  \caption{Krzywe ROC uzyskane dla każdej walidacji (Drzewa decyzyjne)}\label{fig:roc6}
+\end{figure}
+\newpage
+\begin{figure}[H]
+\centering
+<<echo=FALSE, fig=TRUE, fig.height = 14, fig.width = 12>>=
+  par(mfrow=c(3,2))
+for (i in 1:5){
+  rpart.plot(drzewa[[i]], type = 1, fallen.leaves = FALSE, extra = 4)
+}
+@
+\caption{Drzewa decyzyjne dla każdej walidacji}
+  \end{figure}
+\newpage
+<<echo=FALSE>>=
+  colMeans(mat6) -> v6
+colMeans(mat6_th) -> v6_th
+@
+  
+  <<echo=FALSE, eval=TRUE, results='asis'>>=
+mat6 <- rbind(mat6, v6)
+  colnames(mat6) <- c("ACC","TPR","TNR","F1", "MMC")
+rownames(mat6) <- c("1", "2", "3", "4", "5", "średnia")
+print(xtable(mat6,caption="Tabela wskaźników dla 5-fold cross-validation dla drzew decyzyjnych ", label="tab:cvreg6"),sanitize.rownames.function=function(x){x}, type="latex",table.placement = "H")
+@
+  
+  <<echo=FALSE, eval=TRUE, results='asis'>>=
+mat6_th <- rbind(mat6_th, v6_th)
+  colnames(mat6_th) <- c("ACC","TPR","TNR","F1", "MMC")
+rownames(mat6_th) <- c("1", "2", "3", "4", "5", "średnia")
+print(xtable(mat6_th,caption="Tabela wskaźników dla 5-fold cross-validation dla drzew decyzyjnych z p=1/6", label="tab:cvregth6"),sanitize.rownames.function=function(x){x}, type="latex",table.placement = "H")
+@ 
+\subsection{kNN zmienne ciągłe}
+Skorzystamy teraz z metody k- najbliższych sąsiadów. Do stworzenia modelu użyjemy jedynie zmiennych typu integer.
+ Robimy tak dlatego, że algorytm kNN może nie działać prawidłowo dla zmiennych kategorycznych nieuporządkowanych.
+Zmienne które wykorzystujemy do utworzenia modelu na początku normalizujemy, tzn. odejmujemy minimium i dzielimy przez różnicę między maksimum i minimum. 
+W tworzonych przez nas modelach będziemy rozpatrywać różne wartości k. W związku z tym, że model budujemy jedynie dla 7 zmiennych objaśniających, k będzie przyjmowało wartości 1, 3 oraz 5.
+  \begin{figure}[H]
+<<echo=FALSE,warning=FALSE, fig=TRUE,message=FALSE>>=
+  mat_lr_all <- matrix(nrow=5, ncol = 5)
+mat_th <- matrix(nrow=5, ncol = 5) # dla thresholdu
+colors = c('blue', 'red', 'green', 'yellow', 'orange')
+dane_losowo_ciagle <- dane_losowo[,c(which(col4=="integer"),21)]
+#normalizacja danych
+library(stringr)
+normalizacja <- function(x) {
+  return ((x - min(x)) / (max(x) - min(x))) } 
+dane_losowo_ciagle_znormalizowane<- as.data.frame(dane_losowo_ciagle)
+apply(dane_losowo_ciagle_znormalizowane[,1:7], 2, normalizacja) -> dane_losowo_ciagle_znormalizowane[,1:7]
+colnames(dane_losowo_ciagle_znormalizowane) <- colnames(dane_losowo_ciagle)
+
+#zmiana nazw
+colnames(dane_losowo_ciagle_znormalizowane) <- str_replace_all(colnames(dane_losowo_ciagle_znormalizowane),c(" "="","_"=""))
+mat7 <- matrix(nrow=5, ncol = 5)
+mat7_th <- matrix(nrow=5, ncol = 5)
+for(i in 1:5){
+  indeksy_test <- which(folds==i,arr.ind=TRUE)
+  test <- dane_losowo_ciagle_znormalizowane[indeksy_test, ]
+  train <- dane_losowo_ciagle_znormalizowane[-indeksy_test, ]
+  model.knn <- ipredknn(creditability ~.,data=train, k=1)
+  prob_p <- predict(model.knn,test,type="prob")
+  klasy <- predict(model.knn,test,type="class")
+  roc <- roc(test$creditability~prob)
+  plot(roc, col=colors[i], add = (i!=1), lwd = 0.7)
+  if (i==5){legend(x=-0.25, y=0.6, lty =1, legend = c("1", "2", "3", "4", "5"), col = colors)}
+  mat7[i,] <- c(wskazniki(klasy, test), mmc_do_knn_ciagle(klasy, test, cost_matrix))
+  }
+@
+\caption{Krzywe ROC uzyskane dla każdej walidacji (kNN(1))}\label{fig:rocknn10}
+\end{figure}
+<<echo=FALSE>>=
+colMeans(mat7) -> v7
+@
+
+<<echo=FALSE, eval=TRUE, results='asis'>>=
+mat7 <- rbind(mat7, v7)
+colnames(mat7) <- c("ACC","TPR","TNR","F1", "MMC")
+rownames(mat7) <- c("1", "2", "3", "4", "5", "średnia")
+print(xtable(mat7,caption="Tabela wskaźników dla 5-fold cross-validation w modelu kNN(1)", label="tab:cvknn"),sanitize.rownames.function=function(x){x}, type="latex",table.placement = "H")
+@
+  
+\begin{figure}[H]
+<<echo=FALSE, fig=TRUE, message = FALSE>>=
+mat8 <- matrix(nrow=5, ncol = 5)
+mat8_th <- matrix(nrow=5, ncol = 5)
+for(i in 1:5){
+  indeksy_test <- which(folds==i,arr.ind=TRUE)
+  test <- dane_losowo_ciagle_znormalizowane[indeksy_test, ]
+  train <- dane_losowo_ciagle_znormalizowane[-indeksy_test, ]
+  model.knn <- ipredknn(creditability ~.,data=train, k=3)
+  prob_p <- predict(model.knn,test,type="prob")
+  klasy <- predict(model.knn,test,type="class")
+  roc <- roc(test$creditability~prob)
+  plot(roc, col=colors[i], add = (i!=1), lwd = 0.7)
+  if (i==5){legend(x=-0.25, y=0.6, lty =1, legend = c("1", "2", "3", "4", "5"), col = colors)}
+  mat8[i,] <- c(wskazniki(klasy, test), mmc_do_knn_ciagle(klasy, test, cost_matrix))
+  }
+@
+\caption{Krzywe ROC uzyskane dla każdej walidacji kNN(3)}
+\end{figure}
+<<echo=FALSE>>=
+colMeans(mat8) -> v8
+@
+
+<<echo=FALSE, eval=TRUE, results='asis'>>=
+mat8<-rbind(mat8, v8)
+colnames(mat8) <- c("ACC","TPR","TNR","F1", "MMC")
+rownames(mat8) <- c("1", "2", "3", "4", "5", "średnia")
+print(xtable(mat8,caption="Tabela wskaźników dla 5-fold cross-validation w modelu (kNN(3))", label="tab:cvknn2"),sanitize.rownames.function=function(x){x}, type="latex",table.placement = "H")
+@
+  
+\begin{figure}[H]
+<<echo=FALSE, fig=TRUE, message = FALSE>>=
+mat9 <- matrix(nrow=5, ncol = 5)
+mat9_th <- matrix(nrow=5, ncol = 5)
+for(i in 1:5){
+  indeksy_test <- which(folds==i,arr.ind=TRUE)
+  test <- dane_losowo_ciagle_znormalizowane[indeksy_test, ]
+  train <- dane_losowo_ciagle_znormalizowane[-indeksy_test, ]
+  model.knn <- ipredknn(creditability ~.,data=train, k=5)
+  prob_p <- predict(model.knn,test,type="prob")
+  klasy <- predict(model.knn,test,type="class")
+  roc <- roc(test$creditability~prob)
+  plot(roc, col=colors[i], add = (i!=1), lwd = 0.7)
+  if (i==5){legend(x=-0.25, y=0.6, lty =1, legend = c("1", "2", "3", "4", "5"), col = colors)}
+  mat9[i,] <- c(wskazniki(klasy, test), mmc_do_knn_ciagle(klasy, test, cost_matrix))
+}
+@
+\caption{Krzywe ROC uzyskane dla każdej walidacji kNN(5)}
+\end{figure}
+<<echo=FALSE>>=
+colMeans(mat9) -> v9
+@
+
+<<echo=FALSE, eval=TRUE, results='asis'>>=
+mat9 <- rbind(mat9, v9)
+colnames(mat9) <- c("ACC","TPR","TNR","F1", "MMC")
+rownames(mat9) <- c("1", "2", "3", "4", "5", "średnia")
+print(xtable(mat9,caption="Tabela wskaźników dla 5-fold cross-validation w modelu (kNN(5))", label="tab:cvknn3"),sanitize.rownames.function=function(x){x}, type="latex",table.placement = "H")
+@
+
+Na podstawie uzyskanych wyników wnioskujemy, że model uzyskany z użyciem metody k- najbliższych sąsiadów nie jest dobry dla naszych danych. Otrzymujemy bardzo niskie wartości dla czułości oraz $F_1$. Mamy także wysokie koszty błędnej klasyfikacji. 
+Porównując rezultaty uzyskane dla k=1, k=3 oraz k=5 okazuje się, że najlepszy jest model w którym narzuciliśmy k=1. 
+Może to być spowodowane małą ilością zmiennych objaśniających.
+\section{Porównanie modeli}
+
+Tabela \ref{tab:por} zawiera porównanie średnich wartości wskaźników dla wszystkich zbudowanych modeli.
+
+<<echo=FALSE, results = 'asis'>>=
+m = matrix(c(v_lr, v, v2, v3, v4, v5, v6, v7, v8, v9, v_lr_th, v_th, v2_th, v3_th, v4_th, v5_th,  v6_th), nrow=17, ncol=5, byrow=TRUE)
+colnames(m) <- c("ACC","TPR","TNR","F1", "MMC")
+rownames(m) <- c("LR","LR(step)","LR(category)","LR(WoE)","LDA","QDA","Drzewa decyzyjne","kNN(1)", "kNN(3)", "kNN(5)","LR p=1/6","LR(step) p=1/6","LR(category) p=1/6","LR(WoE) p=1/6","LDA p=1/6","QDA p=1/6","Drzewa decyzyjne p=1/6")
+print(xtable(m,caption="Tabela średnich wskaźników dla wszystkich modeli", label="tab:por"),sanitize.rownames.function=function(x){x}, type="latex",table.placement = "H")
+@ 
+
+Widzimy, że większość modeli 'cost-insensitive' ma większą dokładność od modeli 'cost-sensitive'. Jednak dla wszystkich modeli 'cost-insensitive' średni koszt złej klasyfikacji jest wyższy niż dla modeli z thresholdem zmienionym na 1/6. W dalszej analizie uwzględnimy: regresję logistyczną, regresję logistyczną z kategoryzacją, QDA, regresję logistyczną ze stepem i p=1/6, LDA z p=1/6, drzewo decyzyjne z p=1/6.
+
+\section{Modele z najlepszymi rezultatami}
+Najlepiej rokujące modele zbudujemy ponownie, tym razem dla całego zbioru treningowego i porównamy ich skuteczność na zbiorze testowym. Aby skontrolować, czy modele nie są przeuczone, sprawdzimy również jak wygląda ich predykcja na zbiorze treningowym.
+
+\subsection{Regresja logistyczna}
+Jednym z modeli, przy którym uzyskaliśmy dobre wyniki jest model regresji logistycznej, zbudowany na wszystkich zmiennych zawartych w danych. 
+
+<<echo=FALSE>>=
+model2_RL <- glm(formula = creditability~., family = binomial(link='logit'), data = dane_losowo)
+@
+
+<<echo=FALSE,eval=FALSE>>=
+print(model2_RL)
+summary(model2_RL)
+@
+<<echo=FALSE,eval=FALSE>>=
+#  współczynniki modelu
+(wspolczynniki <- coefficients(model2_RL))
+@
+
+<<echo=FALSE>>=
+predykcja_LR_test <- predict(model2_RL, test_final , type = "response")
+klasy_LR <- ifelse(predykcja_LR_test > 0.5,1,0)
+oceny_LR <- c(wskazniki(klasy_LR, test_final), mmc(klasy_LR, test_final, cost_matrix))
+klasy_th_LR <- ifelse(predykcja_LR_test > th,1,0)
+oceny_th_LR <- c(wskazniki(klasy_th_LR, test_final), mmc(klasy_th_LR, test_final, cost_matrix)) 
+predykcja_LR_train <- predict(model2_RL,dane_losowo,  type="response")  
+klasy_LR_train <- ifelse(predykcja_LR_train > 0.5,1,0)
+oceny_LR_train <- c(wskazniki(klasy_LR_train, dane_losowo), mmc(klasy_LR_train, dane_losowo, cost_matrix)) 
+klasy_th_LR_train <- ifelse(predykcja_LR_train > th,1,0)
+oceny_th_LR_train <- c(wskazniki(klasy_th_LR_train, dane_losowo), mmc(klasy_th_LR_train, dane_losowo, cost_matrix))
+@
+<<echo=FALSE, results = 'asis'>>=
+r1 <- oceny_LR
+r2 <- oceny_th_LR
+r3 <- oceny_LR_train
+r4 <- oceny_th_LR_train
+macierzwskazniki <- matrix(nrow=4,ncol=5)
+macierzwskazniki <- rbind(r1,r2,r3,r4)
+colnames(macierzwskazniki) <- c("ACC","TPR","TNR","F1","MMC")
+rownames(macierzwskazniki) <- c("p=0.5 test" ,"p=1/6 test","p=0.5 train","p=1/6 train")
+print(xtable(macierzwskazniki,caption="Tabela wskaźników dla LR", label="tab:rlfinal"),sanitize.rownames.function=function(x){x}, type="latex",table.placement = "H")
+@
+W powyższej tabeli widzimy, że dokładność dla danych testowych różni się od tej uzyskanej dla danych treningowych na drugim miejscu po przecinku. Oznacza to, że nasz model nie jest przeuczony. 
+W przypadku, gdy threshold ustawiony został na 1/6 otrzymujemy satysfakcjonujące wyniki. Dla zbioru testowego czułość wynosi 0.77, wartość $F_1$ to 0.58 a średni koszt błędnej klasyfikacji wynosi 0.69.
+
+\subsection{Regresja logistyczna z kategoryzacją}
+
+Następnym modelem, który zbudujemy dla całego zbioru testowego jest regresja logistyczna z kategoryzacją.
+<<echo=FALSE>>=
+woe.binning(dane_losowo,'creditability',dane_losowo) -> iv
+iv[which(iv[,3]>=0.02),] -> ivwieksze
+@
+
+<<echo=FALSE, fig=TRUE>>=
+woe.binning.plot(ivwieksze)
+@
+\begin{figure}[H]
+<<echo=FALSE, fig=TRUE, message=FALSE>>=
+laczenie <- woe.binning.deploy(dane_losowo, ivwieksze,min.iv.total=0.02)
+testlaczenie <- woe.binning.deploy(test_final,ivwieksze,min.iv.total=0.02,add.woe.or.dum.var='woe')
+trainlaczenie <-  woe.binning.deploy(dane_losowo,ivwieksze,min.iv.total=0.02,add.woe.or.dum.var='woe')
+laczeniebin <- cbind(laczenie[ , grepl( "binned" , names( laczenie ) ) ],laczenie$creditability)
+regfitbin <- glm(laczeniebin$`laczenie$creditability`~.,family=binomial(link=logit),data=laczeniebin)
+regfitbin1 <- step(regfitbin, trace=0)
+prob <- predict(regfitbin1, testlaczenie, type='response')
+predykcja_LR_bin_test <- prob
+roc <- roc(testlaczenie$creditability~prob)
+plot(roc,lwd = 1, col = 'blue')
+klasy <- ifelse(prob > 0.5,1,0)
+klasy_LR_bin <- klasy
+oceny_LR_bin <- c(wskazniki(klasy_LR_bin, testlaczenie), mmc(klasy_LR_bin, testlaczenie, cost_matrix))
+klasy_th <- ifelse(prob > th,1,0)
+klasy_th_LR_bin <- klasy_th
+oceny_th_LR_bin <- c(wskazniki(klasy_th_LR_bin, testlaczenie), mmc(klasy_th_LR_bin, testlaczenie, cost_matrix)) 
+prob2 <- predict(regfitbin1, trainlaczenie, type='response')
+predykcja_LR_train_bin  <- prob2
+klasy_train <- ifelse(prob2 > 0.5,1,0)
+klasy_LR_train_bin <- klasy_train
+oceny_LR_train_bin <- c(wskazniki(klasy_LR_train_bin, trainlaczenie), mmc(klasy_LR_train_bin, trainlaczenie, cost_matrix)) 
+klasy_th_LR_train_bin <- ifelse(predykcja_LR_train_bin > th,1,0)
+oceny_th_LR_train_bin <- c(wskazniki(klasy_th_LR_train_bin, trainlaczenie), mmc(klasy_th_LR_train_bin, trainlaczenie, cost_matrix))
+
+@
+\caption{Krzywa ROC dla LR(category)}\label{fig:roclrfin}
+\end{figure}
+<<echo=FALSE, results = 'asis'>>=
+ r1bin <- oceny_LR_bin
+ r2bin <- oceny_th_LR_bin
+ r3bin <- oceny_LR_train_bin
+ r4bin <- oceny_th_LR_train_bin
+ macierzwskazniki_bin <- matrix(nrow=4,ncol=5)
+ macierzwskazniki_bin <- rbind(r1bin,r2bin,r3bin,r4bin)
+ colnames(macierzwskazniki_bin) <- c("ACC","TPR","TNR","F1","MMC")
+ rownames(macierzwskazniki_bin) <- c("p=0.5 test" ,"p=1/6 test","p=0.5 train","p=1/6 train")
+ print(xtable(macierzwskazniki_bin,caption="Tabela wskaźników dla LR(category)", label="tab:rlfinalbin"),sanitize.rownames.function=function(x){x}, type="latex",table.placement = "H")
+@
+Na podstawie powyższej tabeli stwierdzamy, że podobnie jak w przypadku poprzedniego modelu, nie obserwujemy przeuczenia. Dla thresholdu równego 1/6 otrzymujemy satysfakcjonujące wyniki. Szczególną uwagę możemy zwrócić na niski średni koszt, który nie różni się znacznie na zbiorze treningowym i testowym - wynosi odpowiednio 0,47 i 0,53. Wysoka jest również czułość tego modelu: dla zbioru testowego jest to 0,87, zaś dla zbioru treningowego 0,89. Dla obu zbiorów $F_1$ wynosi 0,6.
+
+\subsection{QDA}
+Kolejnym modelem, który dał dobre wyniki był model kwadratowej analizy dyskryminacyjnej. 
+<<echo=FALSE>>=
+model_qda <- qda(creditability ~ `Status of existing checking account` + `Duration in month` + `Credit amount` 
+                + `Savings account` + `Present employment since` + `Installment rate in percentage of disposable income`
+                + `Present residence since` + `Age in years` + `Number of existing credits at this bank`
+                + `Number of people being liable to provide maintenance for`, data = dane_losowo)
+ @
+ <<echo=FALSE>>=
+pred_QDA_test <- predict(model_qda, newdata=test_final)
+predykcja_QDA_test <- pred_QDA_test$posterior[,2]
+pred_QDA_train <- predict(model_qda,newdata=dane_losowo)
+predykcja_QDA_train <- pred_QDA_train$posterior[,2]
+klasy_QDA <- ifelse(predykcja_QDA_test > 0.5,1,0)
+oceny_QDA <- c(wskazniki(klasy_QDA, test_final), mmc(klasy_QDA, test_final, cost_matrix))
+klasy_th_QDA <- ifelse(predykcja_QDA_test > th,1,0)
+oceny_th_QDA <- c(wskazniki(klasy_th_QDA, test_final), mmc(klasy_th_QDA, test_final, cost_matrix))
+klasy_QDA_train <- ifelse(predykcja_QDA_train > 0.5,1,0)
+oceny_QDA_train <- c(wskazniki(klasy_QDA_train, dane_losowo), mmc(klasy_QDA_train, dane_losowo, cost_matrix))
+klasy_th_QDA_train <- ifelse(predykcja_QDA_train > th,1,0)
+oceny_th_QDA_train <- c(wskazniki(klasy_th_QDA_train, dane_losowo), mmc(klasy_th_QDA_train, dane_losowo, cost_matrix))
+@
+<<echo=FALSE, results = 'asis'>>=
+ r1_qda <- oceny_QDA
+ r2_qda <- oceny_th_QDA
+ r3_qda <- oceny_QDA_train
+ r4_qda <- oceny_th_QDA_train
+ macierzwskazniki_qda <- matrix(nrow=4,ncol=5)
+ macierzwskazniki_qda <- rbind(r1_qda,r2_qda,r3_qda,r4_qda)
+ colnames(macierzwskazniki_qda) <- c("ACC","TPR","TNR","F1","MMC")
+ rownames(macierzwskazniki_qda) <- c("p=0.5 test" ,"p=1/6 test","p=0.5 train","p=1/6 train")
+ print(xtable(macierzwskazniki_qda,caption="Tabela wskaźników dla QDA", label="tab:qdafinal"),sanitize.rownames.function=function(x){x}, type="latex",table.placement = "H")
+@
+Po raz kolejny, tym razem korzystając z metody kwadratowej analizy dyskryminacyjnej otrzymujemy dość dobre wartości wskaźników. Jak widać, warto zmienić punkt odcięcia. Zmniejszamy wówczas średnie koszty błędnej klasyfikacji z 0.83 na 0.64 (dla zbioru testowego).
+W przypadku p*=1/6 dostajemy czułość na poziomie 77\%.
+
+\subsection{Regresja logistyczna ze stepem i p=1/6}
+<<echo=FALSE>>=
+model30_RL <- glm(formula = creditability~., family = binomial(link='logit'), data = dane_losowo)
+model3_RL <- step(model30_RL, trace=0) 
+@
+<<echo=FALSE,eval=FALSE>>=
+print(model3_RL)
+summary(model3_RL)
+@
+<<echo=FALSE>>=
+predykcja_LR_test3 <- predict(model3_RL, test_final , type = "response")
+klasy_th_LR3 <- ifelse(predykcja_LR_test3 > th,1,0)
+oceny_th_LR3 <- c(wskazniki(klasy_th_LR3, test_final), mmc(klasy_th_LR3, test_final, cost_matrix)) 
+predykcja_LR_train3 <- predict(model3_RL,dane_losowo,  type="response")  
+klasy_th_LR_train3 <- ifelse(predykcja_LR_train3 > th,1,0)
+oceny_th_LR_train3 <- c(wskazniki(klasy_th_LR_train3, dane_losowo), mmc(klasy_th_LR_train3, dane_losowo, cost_matrix))
+@
+<<echo=FALSE, results = 'asis'>>=
+ r23 <- oceny_th_LR3
+ r43 <- oceny_th_LR_train3
+ macierzwskazniki3 <- matrix(nrow=2,ncol=5)
+ macierzwskazniki3 <- rbind(r23,r43)
+ colnames(macierzwskazniki3) <- c("ACC","TPR","TNR","F1","MMC")
+ rownames(macierzwskazniki3) <- c("p=1/6 test","p=1/6 train")
+ print(xtable(macierzwskazniki3,caption="Tabela wskaźników dla LR(step)", label="tab:rlfinal3"),sanitize.rownames.function=function(x){x}, type="latex",table.placement = "H")
+@
+Tabela \ref{tab:rlfinal3} zawiera wartości wskaźników, które uzyskaliśmy dla modelu regresji logistycznej przy ustawionym p=1/6.
+Ponownie możemy stwierdzić, że nasz model nie został przeuczony, gdyż wartości które otrzymaliśmy dla zbioru treningowego oraz testowego są bardzo zbliżone.
+
+\subsection{LDA z p = 1/6}
+Kolejnym modelem, który dał dobre wyniki był model liniowej analizy dyskryminacyjnej z p=1/6. 
+<<echo=FALSE>>=
+model_lda <- lda(creditability ~ `Status of existing checking account` + `Duration in month` + `Credit amount` 
+                + `Savings account` + `Present employment since` + `Installment rate in percentage of disposable income`
+                + `Present residence since` + `Age in years` + `Number of existing credits at this bank`
+                + `Number of people being liable to provide maintenance for`, data = dane_losowo)
+@
+
+<<echo=FALSE>>=
+pred_LDA_test <- predict(model_lda, newdata=test_final)
+predykcja_LDA_test <- pred_LDA_test$posterior[,2]
+pred_LDA_train <- predict(model_lda,newdata=dane_losowo)
+predykcja_LDA_train <- pred_LDA_train$posterior[,2]
+klasy_LDA <- ifelse(predykcja_LDA_test > 0.5,1,0)
+oceny_LDA <- c(wskazniki(klasy_LDA, test_final), mmc(klasy_LDA, test_final, cost_matrix))
+klasy_th_LDA <- ifelse(predykcja_LDA_test > th,1,0)
+oceny_th_LDA <- c(wskazniki(klasy_th_LDA, test_final), mmc(klasy_th_LDA, test_final, cost_matrix))
+klasy_LDA_train <- ifelse(predykcja_LDA_train > 0.5,1,0)
+oceny_LDA_train <- c(wskazniki(klasy_LDA_train, dane_losowo), mmc(klasy_LDA_train, dane_losowo, cost_matrix))
+klasy_th_LDA_train <- ifelse(predykcja_LDA_train > th,1,0)
+oceny_th_LDA_train <- c(wskazniki(klasy_th_LDA_train, dane_losowo), mmc(klasy_th_LDA_train, dane_losowo, cost_matrix))
+@
+
+<<echo=FALSE, results = 'asis'>>=
+ r1_lda <- oceny_LDA
+ r2_lda <- oceny_th_LDA
+ r3_lda <- oceny_LDA_train
+ r4_lda <- oceny_th_LDA_train
+ macierzwskazniki_lda <- matrix(nrow=2,ncol=5)
+ macierzwskazniki_lda <- rbind(r2_lda,r4_lda)
+ colnames(macierzwskazniki_lda) <- c("ACC","TPR","TNR","F1","MMC")
+ rownames(macierzwskazniki_lda) <- c("p=1/6 test","p=1/6 train")
+ print(xtable(macierzwskazniki_lda,caption="Tabela wskaźników dla LDA", label="tab:ldafinal"),sanitize.rownames.function=function(x){x}, type="latex",table.placement = "H")
+@
+Dla modelu opartego na LDA na obu zbiorach otrzymujemy bardzo zbliżone wyniki. Dla zbioru testowego wartość TPR wynosi 0.86, współczynnik $F_1$ ma wartość 0.64.
+
+\subsection{Drzewo decyzyjne z p=1/6}
+<<echo=FALSE, message=FALSE>>=
+tree.large1 <- rpart(formula = creditability ~ ., data = dane_losowo, method = "class", 
+                      cp=0.001)
+tree.large1$cptable -> x # tabelka z errorami
+which.min(x[,4]) -> n # bierzemy n o najmniejszym błędzie
+x[n,4] -> x0 # tenże błąd
+x0std <- x[n, 5] # 1SE dla tego błędu
+min(which(x[c(1:n),4]<=x0+x0std)) -> opt # bierzemy m najmniejszem, które <= n i jego error <= min. error + std 
+x[opt,1] -> cp.opt
+tree.large.pruned1 <- rpart(formula = creditability~., data = dane_losowo, method = "class",
+                             cp=cp.opt)
+predykcja_T_test <- predict(tree.large.pruned1, newdata=test_final, type = "prob")[,2]
+klasy_th_T<- ifelse(predykcja_T_test > th,1,0)
+oceny_th_T <- c(wskazniki(klasy_th_T, test_final), mmc(klasy_th_T, test_final, cost_matrix)) 
+predykcja_T_train <- predict(tree.large.pruned1, data=dane_losowo, type = "prob")[,2]
+klasy_th_T_train <- ifelse(predykcja_T_train > th,1,0)
+oceny_th_T_train <- c(wskazniki(klasy_th_T_train, dane_losowo), mmc(klasy_th_T_train, dane_losowo, cost_matrix))
+@
+
+<<echo=FALSE, results= 'asis'>>=
+ r2T <- oceny_th_T
+ r4T <- oceny_th_T_train
+ macierzwskaznikiT <- matrix(nrow=2,ncol=5)
+ macierzwskaznikiT <- rbind(r2T,r4T)
+ colnames(macierzwskaznikiT) <- c("ACC","TPR","TNR","F1","MMC")
+ rownames(macierzwskaznikiT) <- c("p=1/6 test","p=1/6 train")
+ print(xtable(macierzwskaznikiT,caption="Tabela wskaźników dla drzewa decyzyjnego", label="tab:rlfinalT"),sanitize.rownames.function=function(x){x}, type="latex",table.placement = "H")
+ @
+
+W Tabeli \ref{tab:rlfinalT} widzimy, że dokładność tego modelu jest bardzo niska zarówno na zbiorze testowym, jak i treningowym. Czułość wynosi aż 1, za to specyficzność wynosi 0. Oznacza to, że model klasyfikuje wszystkie obserwacje do jednej klasy, co jest dla niego dyskwalifikujące. 
+
+\section{Podsumowanie}
+
+Porównanie wskaźników dla wszystkich modeli, które uczyniliśmy 'cost-sensitive' za pomocą zastosowania thresholdu $p=1/6$, zostało przedstawione w Tabeli \ref{tab:porfinal}.
+<<echo=FALSE, results = 'asis'>>= 
+final <- rbind(r2, r2bin,  r23,  r2_lda,  r2_qda, r2T)
+colnames(final) <- c("ACC","TPR","TNR","F1", "MMC")
+rownames(final) <- c("LR", "LR(category)","LR(step)", "LDA","QDA", "Drzewa decyzyjne")
+print(xtable(final,caption="Tabela wskaźników dla wszystkich modeli na zbiorze testowym z p =1/6", label="tab:porfinal"),sanitize.rownames.function=function(x){x}, type="latex",table.placement = "H")
+
+ @
+Najniższy średni koszt złej klasyfikacji obeserwujemy dla modelu regresji logistycznej z kategoryzacją. Ten model ma także wysoką dokładność, czułość i specyficzność. Gdybyśmy mieli wybrać najlepszy ze zbudowanych modeli, byłby to właśnie ten. Jednak niektóre inne modele dają bardzo zbliżone wyniki. Niewiele gorzej prezentuje się model LDA, ma on nawet wyższe $F_1$ niż poprzedni model. Być może zbudowanie modeli z innym wyborem zmiennych dałoby lepsze wyniki, więc prawdopodobnie otrzymane modele nie są optymalne. Poprawę wyników moglibyśmy uzyskać stosując bardziej zaawansowane metody, takie jak np. bagging.
+
+%Poniżej zamieszczamy podsumowanie informacji o najlepszym zbudowanym modelu, tzn. regresji logistycznej z kategoryzacją.
+<<echo=FALSE, eval = FALSE>>=
+summary(regfitbin1)
+@
+\end{document}
