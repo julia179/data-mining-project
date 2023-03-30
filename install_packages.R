@@ -1,0 +1,23 @@
+install.packages(c(
+  'knitr',
+  'xtable',
+  'stringr',
+  'ipred',
+  'ggplot2',
+  'gridExtra',
+  'plyr',
+  'dplyr',
+  'dismo',
+  'pROC',
+  'woeBinning',
+  'MASS',
+  'rpart',
+  'rpart.plot',
+  'cluster',
+  'reshape2',
+  'e1071',
+  'factoextra',
+  'NbClust',
+  'clValid'
+  'reshape'
+))
